@@ -2,36 +2,30 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Estrutura de nó da árvore binária de cômodos
-typedef struct Sala {
-    char nome[40];
-    struct Sala* esquerda;
-    struct Sala* direita;
-} Sala;
+#define TAM_HASH 7
 
-// Estrutura de nó da BST de pistas
+// BST de pistas
 typedef struct Pista {
     char texto[40];
     struct Pista* esq;
     struct Pista* dir;
 } Pista;
 
-// Cria uma sala (nó) da árvore
-typedef struct {
-    Sala* sala;
-    const char* pista; // NULL se não há pista
-} SalaComPista;
+// Nó da lista encadeada para tabela hash
+typedef struct Assoc {
+    char pista[40];
+    char suspeito[30];
+    struct Assoc* prox;
+} Assoc;
 
-Sala* criarSala(const char* nome, Sala* esq, Sala* dir) {
-    Sala* nova = (Sala*)malloc(sizeof(Sala));
-    if (!nova) { printf("Erro de alocação!\n"); exit(1); }
-    strcpy(nova->nome, nome);
-    nova->esquerda = esq;
-    nova->direita = dir;
-    return nova;
+// Função de espalhamento simples (soma ASCII dos primeiros 3 chars)
+int hash(const char* pista) {
+    int h = 0;
+    for (int i = 0; i < 3 && pista[i] != '\0'; i++) h += pista[i];
+    return h % TAM_HASH;
 }
 
-Pista* inserir(Pista* raiz, const char* texto) {
+Pista* inserirBST(Pista* raiz, const char* texto) {
     if (!raiz) {
         Pista* nova = (Pista*)malloc(sizeof(Pista));
         strcpy(nova->texto, texto);
@@ -39,9 +33,9 @@ Pista* inserir(Pista* raiz, const char* texto) {
         return nova;
     }
     if (strcmp(texto, raiz->texto) < 0)
-        raiz->esq = inserir(raiz->esq, texto);
+        raiz->esq = inserirBST(raiz->esq, texto);
     else if (strcmp(texto, raiz->texto) > 0)
-        raiz->dir = inserir(raiz->dir, texto);
+        raiz->dir = inserirBST(raiz->dir, texto);
     return raiz;
 }
 
@@ -52,74 +46,91 @@ void emOrdem(Pista* raiz) {
     emOrdem(raiz->dir);
 }
 
-void explorarSalas(Sala* atual, Pista** pistas) {
-    char escolha;
-    while (atual) {
-        printf("\nVocê está em: %s\n", atual->nome);
-        // Ao visitar certas salas, adiciona pistas
-        if (strcmp(atual->nome, "Cozinha") == 0) {
-            printf("Você encontrou uma pista: 'Pegada de lama'\n");
-            *pistas = inserir(*pistas, "Pegada de lama");
-        } else if (strcmp(atual->nome, "Biblioteca") == 0) {
-            printf("Você encontrou uma pista: 'Livro rasgado'\n");
-            *pistas = inserir(*pistas, "Livro rasgado");
-        } else if (strcmp(atual->nome, "Sala de Jantar") == 0) {
-            printf("Você encontrou uma pista: 'Copo quebrado'\n");
-            *pistas = inserir(*pistas, "Copo quebrado");
-        } else if (strcmp(atual->nome, "Escritório") == 0) {
-            printf("Você encontrou uma pista: 'Envelope misterioso'\n");
-            *pistas = inserir(*pistas, "Envelope misterioso");
-        }
-        if (!atual->esquerda && !atual->direita) {
-            printf("Fim do caminho! Sala final.\n");
-            break;
-        }
-        printf("Escolha: (e) esquerda, (d) direita, (p) listar pistas, (s) sair: ");
-        scanf(" %c", &escolha);
-        if (escolha == 'e' && atual->esquerda) {
-            atual = atual->esquerda;
-        } else if (escolha == 'd' && atual->direita) {
-            atual = atual->direita;
-        } else if (escolha == 'p') {
-            printf("\nPistas encontradas (ordem alfabética):\n");
-            emOrdem(*pistas);
-        } else if (escolha == 's') {
-            printf("Saindo da exploração.\n");
-            break;
-        } else {
-            printf("Opção inválida ou caminho inexistente!\n");
+void inserirNaHash(Assoc* tabela[], const char* pista, const char* suspeito) {
+    int idx = hash(pista);
+    Assoc* novo = (Assoc*)malloc(sizeof(Assoc));
+    strcpy(novo->pista, pista);
+    strcpy(novo->suspeito, suspeito);
+    novo->prox = tabela[idx];
+    tabela[idx] = novo;
+}
+
+void listarAssociacoes(Assoc* tabela[]) {
+    printf("\nAssociações pista → suspeito:\n");
+    for (int i = 0; i < TAM_HASH; i++) {
+        Assoc* a = tabela[i];
+        while (a) {
+            printf("Pista: %s → Suspeito: %s\n", a->pista, a->suspeito);
+            a = a->prox;
         }
     }
 }
 
-void liberarPistas(Pista* raiz) {
+void contarSuspeitos(Assoc* tabela[], char suspeitos[][30], int numSuspeitos, int* contagem) {
+    for (int i = 0; i < TAM_HASH; i++) {
+        Assoc* a = tabela[i];
+        while (a) {
+            for (int j = 0; j < numSuspeitos; j++) {
+                if (strcmp(a->suspeito, suspeitos[j]) == 0) contagem[j]++;
+            }
+            a = a->prox;
+        }
+    }
+}
+
+void liberarBST(Pista* raiz) {
     if (!raiz) return;
-    liberarPistas(raiz->esq);
-    liberarPistas(raiz->dir);
+    liberarBST(raiz->esq);
+    liberarBST(raiz->dir);
     free(raiz);
 }
 
+void liberarHash(Assoc* tabela[]) {
+    for (int i = 0; i < TAM_HASH; i++) {
+        Assoc* a = tabela[i];
+        while (a) {
+            Assoc* temp = a;
+            a = a->prox;
+            free(temp);
+        }
+    }
+}
+
 int main() {
-    // Monta a árvore binária estaticamente
-    Sala* cozinha = criarSala("Cozinha", NULL, NULL);
-    Sala* biblioteca = criarSala("Biblioteca", NULL, NULL);
-    Sala* salaJantar = criarSala("Sala de Jantar", NULL, NULL);
-    Sala* escritorio = criarSala("Escritório", NULL, NULL);
-    Sala* salaEstar = criarSala("Sala de Estar", cozinha, biblioteca);
-    Sala* corredor = criarSala("Corredor", salaJantar, escritorio);
-    Sala* hallEntrada = criarSala("Hall de Entrada", salaEstar, corredor);
-
-    Pista* pistas = NULL;
-    printf("Bem-vindo à Mansão!\n");
-    explorarSalas(hallEntrada, &pistas);
-
-    liberarPistas(pistas);
-    free(cozinha);
-    free(biblioteca);
-    free(salaJantar);
-    free(escritorio);
-    free(salaEstar);
-    free(corredor);
-    free(hallEntrada);
+    // Suspeitos possíveis
+    char suspeitos[4][30] = {"Sr. Black", "Sra. White", "Coronel Mustard", "Prof. Plum"};
+    int numSuspeitos = 4;
+    // Monta a árvore binária de cômodos
+    // ...similar ao nível anterior...
+    // Para simplificação, pistas e suspeitos são fixos
+    const char* pistasSalas[][2] = {
+        {"Cozinha", "Pegada de lama"},
+        {"Biblioteca", "Livro rasgado"},
+        {"Sala de Jantar", "Copo quebrado"},
+        {"Escritório", "Envelope misterioso"}
+    };
+    const char* suspeitosPistas[] = {
+        "Sr. Black", "Sra. White", "Coronel Mustard", "Prof. Plum"
+    };
+    Pista* pistasBST = NULL;
+    Assoc* tabelaHash[TAM_HASH] = {0};
+    // Insere pistas e associações
+    for (int i = 0; i < 4; i++) {
+        pistasBST = inserirBST(pistasBST, pistasSalas[i][1]);
+        inserirNaHash(tabelaHash, pistasSalas[i][1], suspeitosPistas[i]);
+    }
+    printf("Pistas encontradas (ordem alfabética):\n");
+    emOrdem(pistasBST);
+    listarAssociacoes(tabelaHash);
+    // Conta suspeitos
+    int contagem[4] = {0};
+    contarSuspeitos(tabelaHash, suspeitos, numSuspeitos, contagem);
+    int max = 0, idxMax = 0;
+    for (int i = 0; i < numSuspeitos; i++) {
+        if (contagem[i] > max) { max = contagem[i]; idxMax = i; }
+    }
+    printf("\nSuspeito mais citado: %s (%d pistas)\n", suspeitos[idxMax], max);
+    liberarBST(pistasBST);
+    liberarHash(tabelaHash);
     return 0;
 }
